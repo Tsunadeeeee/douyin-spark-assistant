@@ -1,0 +1,80 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:16px sans-serif;background:#10121a;color:#eee}nav{height:62px;padding:16px}#scroller{position:absolute;left:15px;top:70px;width:260px;height:600px;overflow-y:auto}.conversationConversationItemwrapper{height:74px;padding:10px;display:flex;gap:12px;border:1px solid #414453;box-sizing:border-box;cursor:pointer}.conversationConversationItemcurConversation{background:#33394a}.conversationConversationItemtitleWrapper{display:flex;align-items:center;gap:10px}.commonStreakstreakContainer{display:flex;align-items:center;gap:3px;font-size:12px;color:#ffb67d}img{width:30px;height:30px}.commonStreakicon{width:18px;height:18px}.componentsRightPanelwrapper{position:absolute;left:290px;top:70px;width:calc(100% - 305px);height:calc(100vh - 85px);background:#1a1e29;padding:18px}.RightPanelHeadertitleContainer{display:flex;gap:20px}.messageEditorinputArea{position:absolute;left:18px;bottom:60px;width:calc(100% - 45px);min-height:60px;white-space:pre-wrap;background:#10131b;padding:10px;border:1px solid #454b60}.messageMsgInputpublishBtn{position:absolute;bottom:12px;right:25px;padding:10px;background:#414453}.messageMsgInputpublishRedBtn{background:#db224e}.messages{margin-top:50px}a{color:#9abaff}#alert{position:fixed;top:20px;left:300px;background:#933;padding:12px}
+*{box-sizing:border-box}body{overflow:hidden}#scroller{width:280px;height:calc(100vh - 90px);scrollbar-width:thin;scrollbar-color:#424b61 #141925}.conversationConversationItemwrapper{height:86px;padding:14px 12px;position:relative;border:0;border-bottom:1px solid #293144;gap:10px}.conversationConversationItemwrapper>div{min-width:0;flex:1}.conversationConversationItemtitleWrapper{gap:6px}.conversationConversationItemtitle{max-width:125px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.ConversationItemTagNextToTitletimeStr{position:absolute;right:12px;bottom:10px;font-size:11px;color:#91a0ba}.conversationConversationItemwrapper small{font-size:11px;color:#a7b2c8;display:block;margin-top:8px;max-width:175px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.commonStreakstreakContainer{white-space:nowrap;font-size:10px}.componentsRightPanelwrapper{left:310px;width:calc(100% - 325px);height:calc(100vh - 90px);border-radius:10px}.messageEditorinputArea{width:calc(100% - 36px);border-radius:8px}.messageMsgInputpublishBtn{border:0;border-radius:6px;color:white}</style></head><body><nav><span data-e2e="user-info"><a href="/user/current-owner">当前账号 · 本地模拟测试页面</a></span></nav><div id="scroller"></div>
+<div class="componentsRightPanelwrapper"><div class="RightPanelHeadertitleContainer"><div class="RightPanelHeadertitle"></div><div id="headerBadge"></div></div><div class="messages">模拟页面：不发送真实消息</div><div class="messageEditorinputArea" contenteditable="true"></div><button class="messageMsgInputpublishBtn e2e-send-msg-btn">发送</button></div>
+<script>
+window.people=[{"name": "阿青", "state": "active", "when": "昨天 20:00"}, {"name": "阿白", "state": "rekindling", "when": "2025/01/01"}, {"name": "普通好友", "state": "none", "when": "刚刚", "mutual": false}, {"name": "灰色火花", "state": "gray", "when": "11/05"}, {"name": "即将消失的好友", "state": "expiring", "when": "前天"}, {"name": "尚未点燃的好友", "state": "unlit", "when": "未知时间"}, {"name": "群聊", "state": "active", "group": true}];window.options={};window.sent=[];
+const activeImage='https://p3.douyinpic.com/aweme-client-static-resource/chat_days_normal_3140%403x.png~tplv-obj.image';
+const grayImage='https://p3.douyinpic.com/aweme-client-static-resource/chat_days_disable_3140%403x.png~tplv-obj.image';
+let current=null;
+const input=document.querySelector('.messageEditorinputArea');
+const button=document.querySelector('.messageMsgInputpublishBtn');
+if(options.scrollHeight)document.querySelector('#scroller').style.height=options.scrollHeight+'px';
+function badge(person){
+ if(person.state==='none')return '';
+ const recovery=person.state==='rekindling';
+ const text=person.label||(recovery?'重燃中':person.state==='expiring'?'2天后消失':person.state==='unlit'?'尚未点亮':person.state==='inactive'?'火花已消失':'15');
+ const image=person.state==='active'?activeImage:grayImage;
+ return '<div class="commonStreakstreakContainer"><img class="commonStreakicon" src="'+image+'"><div class="commonStreaknormalText '+(recovery||person.state==='expiring'?'commonStreaklabelText':'')+'">'+text+'</div></div>';
+}
+people.forEach((person,index)=>{
+ const row=document.createElement('div');row.className='conversationConversationItemwrapper';row.setAttribute('data-e2e','conversation-item');
+ row.innerHTML='<img class="'+(person.group?'commonConversationIconnoDrag':'avatar')+'" src="/avatars/'+index+'.png"><div><div class="conversationConversationItemtitleWrapper"><div class="conversationConversationItemtitle"></div>'+badge(person)+'</div><small>火花重燃中只是聊天预览</small></div>';
+ row.querySelector('.conversationConversationItemtitle').textContent=person.name;
+ const stamp=document.createElement('span');stamp.className='ConversationItemTagNextToTitletimeStr';
+ stamp.textContent=person.when||'昨天 20:00';
+ if(person.datetime)stamp.setAttribute('datetime',person.datetime);
+ row.querySelector('.conversationConversationItemtitleWrapper').appendChild(stamp);
+ if(person.mutual!==undefined)row.setAttribute('data-mutual-follow',String(person.mutual));
+ row.addEventListener('mousedown',()=>{
+  document.querySelectorAll('.conversationConversationItemcurConversation').forEach(el=>el.classList.remove('conversationConversationItemcurConversation'));
+  row.classList.add('conversationConversationItemcurConversation');current=person;
+  document.querySelector('.RightPanelHeadertitle').textContent=options.wrongHeader?'其他人':person.name;
+  document.querySelector('#headerBadge').innerHTML=badge(person);
+  document.querySelectorAll('.RightPanelHeaderfollow').forEach(x=>x.remove());
+  if(person.headerFollow){const relation=document.createElement('span');relation.className='RightPanelHeaderfollow';relation.textContent=person.headerFollow;document.querySelector('.componentsRightPanelwrapper').appendChild(relation);}
+  input.textContent=person.draft||'';button.classList.toggle('messageMsgInputpublishRedBtn',!!input.textContent);
+ });
+ document.querySelector('#scroller').appendChild(row);
+});
+window.builtinNames=['[微笑]','[捂脸]','[比心]'];
+window.inlineEmojiParse=true;
+function fixturePlain(node){
+ const clone=node.cloneNode(true);clone.removeAttribute('contenteditable');clone.className='';clone.style.cssText='position:fixed;left:-10000px;top:0;white-space:pre-wrap;width:600px';
+ clone.querySelectorAll('img').forEach(img=>img.replaceWith(document.createTextNode(img.alt||'')));document.body.appendChild(clone);const text=clone.innerText.trim();clone.remove();return text;
+}
+function applyOfficialInlineTokens(){
+ if(!window.inlineEmojiParse)return;
+ const walker=document.createTreeWalker(input,NodeFilter.SHOW_TEXT),nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+ for(const node of nodes){const text=node.nodeValue;const re=/\[[^\[\]\r\n]+\]/g;let end=0,match,changed=false;const f=document.createDocumentFragment();
+  while((match=re.exec(text))){const index=window.builtinNames.indexOf(match[0]);if(index<0)continue;changed=true;f.append(document.createTextNode(text.slice(end,match.index)));const outer=document.createElement('span');outer.style.display='inline-flex';const img=document.createElement('img');img.src='https://p3.douyinpic.com/spark-fixture/small-'+index+'.png';img.alt=match[0];img.setAttribute('data-apm-action','输入框emoji');outer.appendChild(img);f.appendChild(outer);end=re.lastIndex;}
+  if(changed){f.append(document.createTextNode(text.slice(end)));node.replaceWith(f);}
+ }
+}
+input.addEventListener('input',()=>{applyOfficialInlineTokens();button.classList.toggle('messageMsgInputpublishRedBtn',!!input.textContent||!!input.querySelector('img'));});
+button.addEventListener('click',()=>{
+ if(!current||(!input.textContent&&!input.querySelector('img')))return;
+ sent.push({name:current.name,text:fixturePlain(input),kind:input.querySelector('img')?'builtin':'text',emoji:input.querySelector('img')?.src||'',emojis:[...input.querySelectorAll('img')].map(x=>x.alt)});
+ if(!options.neverClear)input.textContent='';
+ button.classList.remove('messageMsgInputpublishRedBtn');
+ if(options.failAfterClick){const alert=document.createElement('div');alert.id='alert';if(options.toastClass)alert.className='commonToasterror';else alert.role='alert';alert.textContent='操作过于频繁';document.body.appendChild(alert);}
+});
+
+const emojiTrigger=document.createElement('button');emojiTrigger.className='messageMsgInputiconAction';emojiTrigger.textContent='☺';emojiTrigger.style.cssText='position:absolute;bottom:14px;left:20px;color:#fff;background:#354055;border:0;border-radius:6px;padding:8px';document.querySelector('.componentsRightPanelwrapper').appendChild(emojiTrigger);
+window.emojiClicks=0;window.emojiMode=1;
+emojiTrigger.onclick=()=>{
+ document.querySelectorAll('.componentsemojiemojiPanel').forEach(x=>x.remove());
+ const panel=document.createElement('div');panel.className='componentsemojiemojiPanel';panel.style.cssText='position:fixed;right:30px;bottom:75px;width:300px;background:#252d40;padding:12px;z-index:100;border:1px solid #59627c;border-radius:12px';
+ const content=document.createElement('div');content.className='componentsemojitabPanel';content.style.cssText='height:150px;overflow:auto';panel.appendChild(content);
+ const tabs=document.createElement('div');panel.appendChild(tabs);
+ const show=n=>{window.emojiMode=n;tabs.querySelectorAll('.emojiEmojisModalTabsubTab').forEach((x,i)=>x.classList.toggle('emojiEmojisModalTabactiveDark',i===n));content.replaceChildren();let grid=content;
+  if(n===1){grid=document.createElement('div');grid.className='emojiSmallEmojismallEmojiPage';grid.style.minHeight='50px';content.appendChild(grid);}
+  if(n===1||n===2)for(let j=0;j<3;j++){const box=document.createElement('div');box.style.cssText='display:inline-block;padding:8px';const img=document.createElement('img');img.src='https://p3.douyinpic.com/spark-fixture/'+(n===1?'small':'custom')+'-'+j+'.png';if(n===2)img.alt='收藏表情 '+(j+1);img.style.cssText='width:42px;height:42px';box.appendChild(img);grid.appendChild(box);
+   if(n===1){box.className='emojiSmallEmojismallEmojiItem';img.className='emojiSmallEmojismallEmojiItemIcon';box.addEventListener('contextmenu',e=>{e.preventDefault();document.querySelectorAll('.emojiSmallEmojismallEmojiPopoverContent').forEach(x=>x.remove());if(window.hideBuiltinNames)return;const pop=document.createElement('div');pop.className='emojiSmallEmojismallEmojiPopoverContent';pop.style.cssText='position:fixed;right:350px;bottom:200px;z-index:110;background:#333;padding:20px';const preview=document.createElement('img');preview.className='emojiSmallEmojismallEmojiPopoverItemIcon';preview.src=img.src;preview.title=window.builtinNames[j];pop.appendChild(preview);document.body.appendChild(pop);});img.onclick=()=>{emojiClicks++;const copy=img.cloneNode();copy.alt=window.builtinNames[j];copy.setAttribute('data-apm-action','输入框emoji');input.appendChild(copy);button.classList.add('messageMsgInputpublishRedBtn');panel.remove();};}
+   else{box.className='emojiEmojiItemimgBox';box.setAttribute('data-apm-action','EmojiItem');box.onclick=()=>{emojiClicks++;if(current)sent.push({name:current.name,text:'',kind:'custom',emoji:img.src});if(!window.keepEmojiPanel)panel.remove();};}
+  }
+ };
+ ['互动','自带','收藏','GIF'].forEach((text,i)=>{const tab=document.createElement('button');tab.className='emojiEmojisModalTabsubTab';tab.textContent=text;tab.onclick=()=>show(i);tabs.appendChild(tab);});document.body.appendChild(panel);show(window.emojiMode);
+};
+document.querySelector('.messageEditorinputArea').addEventListener('click',()=>document.querySelectorAll('.componentsemojiemojiPanel,.emojiSmallEmojismallEmojiPopoverContent').forEach(x=>x.remove()));
+</script></body></html>

@@ -1,0 +1,29 @@
+# Generated application and dependencies
+/deps/
+/release/
+/dist/
+/node_modules/
+/__pycache__/
+/engine-test-results.json
+/native-selftest.json
+/layout-debug.json
+/软件界面*.png
+*.log
+*.zip
+# Never commit personal settings or browser profiles
+state.bin*
+WebView2/
+EBWebView/
+User Data/
+Local State
+Cookies*
+Login Data*
+History*
+Session Storage/
+Local Storage/
+IndexedDB/
+Sessions/
+*.env
+.env*
+*.pfx
+*.key

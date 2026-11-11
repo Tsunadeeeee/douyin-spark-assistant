@@ -578,9 +578,12 @@
                 const state = readStore(); state.config = cfg; await writeStore(state);
                 const targets = await scan(cfg);
                 if (mode === "scan") return;
-                const pending = targets.filter(item => (cfg.manualSelection ? selectedIdentities.has(item.identity) : !excluded.has(item.identity)) && (!cfg.dailyDedup || !alreadyAttempted(readStore().records || {}, ownerAtStart, item.identity)));
+                const chosen = targets.filter(item => cfg.manualSelection ? selectedIdentities.has(item.identity) : !excluded.has(item.identity));
+                const pending = chosen.filter(item => !cfg.dailyDedup || !alreadyAttempted(readStore().records || {}, ownerAtStart, item.identity));
+                const dailySkipped = chosen.length - pending.length;
+                const missing = cfg.manualSelection ? Math.max(0, selectedIdentities.size - chosen.length) : 0;
                 if (pending.length > cfg.maxRecipients) throw stopError("本次匹配 " + pending.length + " 位，超过单次上限 " + cfg.maxRecipients + "；未发送，请在名单中排除部分或调整上限");
-                if (!pending.length) { status("没有待发送好友：可能已处理、未勾选或已不在当前列表。"); return; }
+                if (!pending.length) { const summary = "本次未发送：待处理 0 位，今日已尝试跳过 " + dailySkipped + " 位，当前列表未找到 " + missing + " 位；请检查勾选名单。"; status(summary); log(summary); return; }
                 let clicked = 0, skipped = 0;
                 for (let i = 0; i < pending.length; i++) {
                     checkRun(); status("处理 " + (i + 1) + "/" + pending.length + "：" + pending[i].name);
@@ -588,7 +591,8 @@
                     catch (error) { if (error.stop) throw error; skipped++; log("跳过 " + pending[i].name + "：" + error.message); }
                     if (i < pending.length - 1) await pause(cfg.intervalSeconds * 1000);
                 }
-                status("完成：点击发送 " + clicked + " 位，跳过 " + skipped + " 位。送达与火花状态请以抖音为准。");
+                const summary = (clicked === pending.length && !dailySkipped && !missing ? "发送任务完成：本次勾选的 " + clicked + " 位好友均已点击发送。" : "发送任务处理完毕：点击发送 " + clicked + " 位，今日已尝试跳过 " + dailySkipped + " 位，其他跳过 " + skipped + " 位，当前列表未找到 " + missing + " 位。") + "送达与火花状态请以抖音为准。";
+                status(summary); log(summary);
             });
         } catch (error) { status(error.message); log(error.message); }
         finally { setBusy(false); ownerAtStart = ""; }

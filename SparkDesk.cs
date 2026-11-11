@@ -104,7 +104,9 @@ internal sealed class MainForm : Form
     private readonly bool demo, selfTest;
     private readonly string reportPath;
     private readonly LocalState storage;
+    private readonly BuiltinEmojiCache builtinCache;
     private CoreWebView2Environment currentEnvironment;
+    private Task<CoreWebView2Environment> environmentTask;
     private bool automationAvailable;
     private Panel browserHost;
     private Button loadEmojiButton,chooseEmojiButton;
@@ -138,6 +140,7 @@ internal sealed class MainForm : Form
         demo = isDemo; selfTest = isTest; reportPath = output;
         string folder = demo ? Path.Combine(Path.GetTempPath(), "SparkDeskDemo-" + Guid.NewGuid().ToString("N")) : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SparkDesk");
         storage = new LocalState(folder); state = storage.Read();
+        builtinCache = new BuiltinEmojiCache(folder);
         Text = "火花助手 · V1" + (demo ? " — 本地模拟演示" : "");
         ClientSize = new Size(1440, 980); MinimumSize = new Size(1180, 940);
         StartPosition = FormStartPosition.CenterScreen; BackColor = background; ForeColor = ink;
@@ -145,7 +148,7 @@ internal sealed class MainForm : Form
         using (Stream icon = Assembly.GetExecutingAssembly().GetManifestResourceStream("spark.ico")) if (icon != null) Icon = new Icon(icon);
         KeyPreview = true;
         if (selfTest) { ShowInTaskbar = false; Opacity = 0; }
-        BuildUI(); ApplyConfig();
+        BuildUI(); ApplyConfig(); LoadBuiltinCache();
         AutoScaleDimensions = new SizeF(96F,96F); AutoScaleMode = AutoScaleMode.Dpi;
         ResumeLayout(true);
         Shown += async delegate { await InitializeBrowser(); };
@@ -182,18 +185,18 @@ internal sealed class MainForm : Form
         homeButton.Click+=delegate{NavigateChat();};refreshButton.Click+=delegate{if(!busy&&browser.CoreWebView2!=null)browser.Reload();};navigation.Controls.Add(homeButton,1,0);navigation.Controls.Add(refreshButton,2,0);webLayout.Controls.Add(navigation,0,0);
         address=LabelText("正在打开官方登录页面…",8,Visual.Muted,false);webLayout.Controls.Add(address,0,1);
         browserHost=new Panel {Dock=DockStyle.Fill,Margin=new Padding(0,5,0,0),BackColor=Visual.Input};browser=new WebView2 {Dock=DockStyle.Fill,DefaultBackgroundColor=Visual.Input};browserHost.Controls.Add(browser);webLayout.Controls.Add(browserHost,0,2);
-        TableLayoutPanel sidebar=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Margin=Padding.Empty};sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute,518));sidebar.RowStyles.Add(new RowStyle(SizeType.Percent,100));sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute,66));body.Controls.Add(sidebar,1,0);
+        TableLayoutPanel sidebar=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Margin=Padding.Empty};sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute,466));sidebar.RowStyles.Add(new RowStyle(SizeType.Percent,100));sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute,132));body.Controls.Add(sidebar,1,0);
         SoftPanel setupCard=new SoftPanel {Dock=DockStyle.Fill,Margin=new Padding(0,0,0,12),Padding=new Padding(15,10,15,10)};sidebar.Controls.Add(setupCard,0,0);
-        TableLayoutPanel setup=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=10,BackColor=Visual.Card,Margin=Padding.Empty};float[] heights={28,32,80,68,54,35,48,44,40,36};
+        TableLayoutPanel setup=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=10,BackColor=Visual.Card,Margin=Padding.Empty};float[] heights={28,30,66,66,50,35,42,44,40,32};
         for(int i=0;i<heights.Length;i++)setup.RowStyles.Add(new RowStyle(SizeType.Absolute,heights[i]));setupCard.Controls.Add(setup);
         TableLayoutPanel setupTitle=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty};setupTitle.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,100));setupTitle.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));setupTitle.Controls.Add(LabelText("发送设置",11,Visual.Text,true),0,0);engineLabel=LabelText("先完成左侧登录",8,Visual.Muted,false);engineLabel.TextAlign=ContentAlignment.MiddleRight;setupTitle.Controls.Add(engineLabel,1,0);setup.Controls.Add(setupTitle,0,0);
         manual=new CheckBox {Text="自选好友  ·  扫描全部单聊",AutoSize=true,ForeColor=Color.FromArgb(242,184,150),Margin=new Padding(0,6,0,0)};setup.Controls.Add(manual,0,1);
         TableLayoutPanel composerOptions=new TableLayoutPanel {Dock=DockStyle.Fill,RowCount=2,ColumnCount=3,Margin=Padding.Empty};
         composerOptions.RowStyles.Add(new RowStyle(SizeType.Absolute,38));composerOptions.RowStyles.Add(new RowStyle(SizeType.Percent,100));composerOptions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));composerOptions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,98));composerOptions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,98));
-        contentType=new SoftComboBox {Dock=DockStyle.Fill,DropDownStyle=ComboBoxStyle.DropDownList,BackColor=Visual.Input,ForeColor=Visual.Text,Margin=new Padding(0,6,6,0)};contentType.Items.AddRange(new object[]{"文字消息","文字 / 自带表情","收藏表情包"});contentType.SelectedIndex=0;
+        contentType=new SoftComboBox {Dock=DockStyle.Fill,DropDownStyle=ComboBoxStyle.DropDownList,BackColor=Visual.Input,ForeColor=Visual.Text,Margin=new Padding(0,6,6,0)};contentType.Items.AddRange(new object[]{"文字/表情","收藏表情包"});contentType.SelectedIndex=0;
         loadEmojiButton=ButtonText("读取表情",Color.FromArgb(44,55,74));loadEmojiButton.Dock=DockStyle.Fill;chooseEmojiButton=ButtonText("选择表情",Color.FromArgb(44,55,74));chooseEmojiButton.Dock=DockStyle.Fill;
         emojiLabel=LabelText("可选官方自带表情，或账号收藏的表情包。",8,Visual.Muted,false);emojiLabel.AutoEllipsis=true;composerOptions.Controls.Add(contentType,0,0);composerOptions.Controls.Add(loadEmojiButton,1,0);composerOptions.Controls.Add(chooseEmojiButton,2,0);composerOptions.Controls.Add(emojiLabel,0,1);composerOptions.SetColumnSpan(emojiLabel,3);setup.Controls.Add(composerOptions,0,2);
-        contentType.SelectedIndexChanged+=delegate{UpdateContentUI();};loadEmojiButton.Click+=async delegate{await ReadEmojis();};chooseEmojiButton.Click+=delegate{ChooseEmoji();};
+        contentType.SelectedIndexChanged+=delegate{UpdateContentUI();};loadEmojiButton.Click+=async delegate{await ReadEmojis();};chooseEmojiButton.Click+=async delegate{await ChooseEmoji();};
         message=new TextBox {Multiline=true,Dock=DockStyle.Fill,MaxLength=300,AcceptsReturn=true,ScrollBars=ScrollBars.Vertical,BackColor=Visual.Input,ForeColor=Visual.Text,BorderStyle=BorderStyle.None,Margin=new Padding(5,6,5,4)};
         SoftPanel messageBox=new SoftPanel {Dock=DockStyle.Fill,BackColor=Visual.Input,Padding=new Padding(7,4,7,4),Margin=new Padding(0,1,0,5)};messageBox.Controls.Add(message);setup.Controls.Add(messageBox,0,3);
         TableLayoutPanel types=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=2,Margin=Padding.Empty};types.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));types.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));types.RowStyles.Add(new RowStyle(SizeType.Percent,50));types.RowStyles.Add(new RowStyle(SizeType.Percent,50));
@@ -228,7 +231,8 @@ internal sealed class MainForm : Form
         };
         peopleLayout.Controls.Add(recipients,0,1);
         SoftPanel activity=new SoftPanel {Dock=DockStyle.Fill,Margin=Padding.Empty,Padding=new Padding(12,7,12,7)};sidebar.Controls.Add(activity,0,2);
-        logBox=new TextBox {Multiline=true,ReadOnly=true,Dock=DockStyle.Fill,BackColor=Visual.Card,ForeColor=Visual.Muted,BorderStyle=BorderStyle.None,ScrollBars=ScrollBars.Vertical,Font=new Font(Font.FontFamily,8F)};activity.Controls.Add(logBox);
+        TableLayoutPanel activityLayout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=Padding.Empty};activityLayout.RowStyles.Add(new RowStyle(SizeType.Absolute,25));activityLayout.RowStyles.Add(new RowStyle(SizeType.Percent,100));activity.Controls.Add(activityLayout);activityLayout.Controls.Add(LabelText("运行日志",9,Visual.Text,true),0,0);
+        logBox=new TextBox {Multiline=true,ReadOnly=true,Dock=DockStyle.Fill,BackColor=Visual.Card,ForeColor=Visual.Muted,BorderStyle=BorderStyle.None,ScrollBars=ScrollBars.Vertical,Font=new Font(Font.FontFamily,8.5F)};activityLayout.Controls.Add(logBox,0,1);
         manual.CheckedChanged+=delegate{selected.Clear();selectionOverrides.Clear();excluded.Clear();recipients.ClearItems();UpdateModeUI();SetStatus(manual.Checked?"默认勾选近30天联系且互关的好友；可手动调整。":"按四类火花筛选；扫描后可调整名单。");};
         footer=LabelText("本地保存 · 防重复可选 · 手动选择优先       发送与续火结果以抖音为准",8,Visual.Muted,false);root.Controls.Add(footer,0,2);
         foreach(TableLayoutPanel oneRow in new[]{heading,navigation,setupTitle,numbers,actions,secondary,listTools}) {oneRow.RowCount=1;oneRow.RowStyles.Clear();oneRow.RowStyles.Add(new RowStyle(SizeType.Percent,100));}
@@ -236,7 +240,7 @@ internal sealed class MainForm : Form
     }
 
 
-    private string ContentKind {get{return contentType.SelectedIndex==1?"builtin":contentType.SelectedIndex==2?"custom":"text";}}
+    private string ContentKind {get{return contentType.SelectedIndex==1?"custom":"builtin";}}
     private void UpdateContentUI()
     {
         if(contentType==null||message==null)return;
@@ -246,7 +250,13 @@ internal sealed class MainForm : Form
         chooseEmojiButton.Enabled=!busy&&emojiCatalogs.ContainsKey(library)&&emojiCatalogs[library].Count>0;
         chooseEmojiButton.Text=custom?"选择表情包":"插入表情";
         if(custom)emojiLabel.Text=selectedEmoji!=null&&Json.Str(selectedEmoji,"kind")=="custom"?"已选："+Json.Str(selectedEmoji,"name")+" · 仅发送表情包":"打开单聊 → 读取表情 → 选择收藏表情包。";
-        else emojiLabel.Text="点选以 [名称] 插入下方光标处；可多选、重复选择。";
+        else { int count=emojiCatalogs.ContainsKey("builtin")?emojiCatalogs["builtin"].Count:0;emojiLabel.Text=count>0?"本地已存 "+count+" 个表情 · 可重复插入；读取只增不删。":"可直接输入文字；读取一次表情后自动保存，下次直接插入。"; }
+    }
+    private void LoadBuiltinCache()
+    {
+        try {var cached=builtinCache.Read();if(cached.Count>0){emojiCatalogs["builtin"]=cached;Log("已加载本地自带表情 "+cached.Count+" 个，可直接插入，无需重新读取。");}}
+        catch(Exception ex){Log("本地表情缓存暂不可读，原文件保留："+ex.Message);}
+        UpdateContentUI();
     }
     private async Task ReadEmojis()
     {
@@ -263,16 +273,22 @@ internal sealed class MainForm : Form
         message.SelectedText=token;message.SelectionStart=start+token.Length;message.SelectionLength=0;
         UpdateContentUI();return true;
     }
-    private void ChooseEmoji()
+    private async Task ChooseEmoji()
     {
+        if(busy)return;
         string kind=ContentKind=="custom"?"custom":"builtin";List<Dictionary<string,object>> items;
         if(!emojiCatalogs.TryGetValue(kind,out items)||items.Count==0)return;
         Func<Dictionary<string,object>,bool> insert=kind=="builtin"?(Func<Dictionary<string,object>,bool>)InsertBuiltinEmoji:null;
-        using(EmojiPicker picker=new EmojiPicker(items,currentEnvironment,"抖音"+(kind=="builtin"?"自带表情 · 连续插入":"收藏表情包"),false,insert)){
-            picker.ShowDialog(this);
-            if(kind=="custom"&&picker.SelectedEmoji!=null)selectedEmoji=picker.SelectedEmoji;
-            UpdateContentUI();SaveSettings();
-        }
+        try {
+            chooseEmojiButton.Enabled=false;
+            var environment=await GetBrowserEnvironment();if(IsDisposed||busy)return;
+            using(EmojiPicker picker=new EmojiPicker(items,environment,"抖音"+(kind=="builtin"?"自带表情 · 连续插入":"收藏表情包"),false,insert)){
+                picker.ShowDialog(this);
+                if(kind=="custom"&&picker.SelectedEmoji!=null)selectedEmoji=picker.SelectedEmoji;
+                SaveSettings();
+            }
+        }catch(Exception ex){Log("表情面板打开失败："+ex.Message);SetStatus("表情缓存已保留，可稍后重新打开。");}
+        finally {if(!IsDisposed)UpdateContentUI();}
         if(kind=="builtin")message.Focus();
     }
 
@@ -280,7 +296,7 @@ internal sealed class MainForm : Form
     {
         Dictionary<string, object> cfg = Json.Map(state, "config");
         message.Text = Json.Str(cfg, "message");
-        selectedEmoji=Json.Map(cfg,"emoji");string kind=Json.Str(cfg,"contentKind");contentType.SelectedIndex=kind=="builtin"?1:kind=="custom"?2:0;
+        selectedEmoji=Json.Map(cfg,"emoji");string kind=Json.Str(cfg,"contentKind");contentType.SelectedIndex=kind=="custom"?1:0;
         if(kind=="builtin"&&!cfg.ContainsKey("builtinTokenVersion")&&selectedEmoji!=null){
             string token=Json.Str(selectedEmoji,"name");
             if(Regex.IsMatch(token,@"^\[[^\[\]\r\n]{1,40}\]$")&&message.TextLength+token.Length<=message.MaxLength)message.AppendText(token);
@@ -335,7 +351,9 @@ internal sealed class MainForm : Form
     private void Log(string text)
     {
         string line = DateTime.Now.ToString("HH:mm:ss") + " " + text; logLines.Add(line); if (logLines.Count > 1000) logLines.RemoveAt(0);
-        int start = Math.Max(0, logLines.Count - 30); logBox.Text = String.Join(Environment.NewLine, logLines.GetRange(start, logLines.Count - start)); logBox.SelectionStart = logBox.TextLength; logBox.ScrollToCaret();
+        if (logBox.Lines.Length >= 300) logBox.Lines=logLines.GetRange(Math.Max(0,logLines.Count-200),Math.Min(200,logLines.Count)).ToArray();
+        else logBox.AppendText((logBox.TextLength>0?Environment.NewLine:"")+line);
+        logBox.SelectionStart=logBox.TextLength;logBox.ScrollToCaret();
     }
     private void SetBusy(bool value)
     {
@@ -352,6 +370,11 @@ internal sealed class MainForm : Form
     {
         using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)) { if (stream == null) throw new FileNotFoundException("缺少程序内置资源 " + name); using (StreamReader reader = new StreamReader(stream, Encoding.UTF8)) return reader.ReadToEnd(); }
     }
+    private async Task<CoreWebView2Environment> GetBrowserEnvironment()
+    {
+        if(environmentTask==null)environmentTask=CoreWebView2Environment.CreateAsync(null,Path.Combine(storage.Folder,"WebView2"),null);
+        try {currentEnvironment=await environmentTask;return currentEnvironment;}catch{environmentTask=null;throw;}
+    }
     private async Task InitializeBrowser()
     {
         try
@@ -359,7 +382,7 @@ internal sealed class MainForm : Form
             string version = CoreWebView2Environment.GetAvailableBrowserVersionString(null);
             Log("内置 WebView2 " + version);
             WebView2 sourceBrowser=browser;
-            CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(storage.Folder, "WebView2"), null);currentEnvironment=environment;
+            CoreWebView2Environment environment = await GetBrowserEnvironment();
             await browser.EnsureCoreWebView2Async(environment);
             browser.ZoomFactor = 0.8;
             browser.CoreWebView2.Settings.AreHostObjectsAllowed = false;
@@ -431,14 +454,20 @@ internal sealed class MainForm : Form
             else if (type == "emojiCatalog") {
                 string kind=Json.Str(data,"kind");var list=new List<Dictionary<string,object>>();IEnumerable items=data!=null&&data.ContainsKey("items")?data["items"] as IEnumerable:null;
                 if(items!=null)foreach(object raw in items){var item=raw as Dictionary<string,object>;if(item!=null&&Json.Str(item,"kind")==kind)list.Add(item);}
-                emojiCatalogs[kind]=list;UpdateContentUI();
+                if(kind=="builtin") {
+                    if(String.IsNullOrEmpty(Json.Str(data,"error"))) {
+                        try {int added;emojiCatalogs[kind]=builtinCache.Merge(list,out added);Log("自带表情缓存更新：新增 "+added+" 个，累计 "+emojiCatalogs[kind].Count+" 个；旧表情保留。");}
+                        catch(Exception ex){Log("表情缓存写入失败，原缓存保留："+ex.Message);if(!emojiCatalogs.ContainsKey(kind))emojiCatalogs[kind]=list;}
+                    } else Log("表情读取未完成，继续保留本地表情缓存。");
+                } else if(kind=="custom") emojiCatalogs[kind]=list;
+                UpdateContentUI();
             }
             else if (type == "busy") SetBusy(data != null && data.ContainsKey("value") && Convert.ToBoolean(data["value"]));
             else if (type == "status") SetStatus(Json.Str(data, "text"));
             else if (type == "log") Log(Json.Str(data, "text"));
             else if (type == "preview")
             {
-                renderingRecipients = true;
+                renderingRecipients = true;recipients.BeginUpdate();
                 try {
                     recipients.ClearItems(); IEnumerable items = envelope["data"] as IEnumerable;
                     if (items != null) foreach (object raw in items)
@@ -453,7 +482,7 @@ internal sealed class MainForm : Form
                         bool include = manual.Checked ? selected.Contains(person.Id) : !excluded.Contains(person.Id);
                         int index=recipients.Items.Add(person); recipients.SetItemChecked(index,include);
                     }
-                } finally { renderingRecipients = false; }
+                } finally { renderingRecipients = false;recipients.EndUpdate(); }
                 if (recipients.Items.Count > 0) recipients.TopIndex=0;
                 UpdateListLabel();
             }
@@ -584,9 +613,38 @@ internal sealed class MainForm : Form
             await browser.CoreWebView2.ExecuteScriptAsync("document.querySelectorAll('.ConversationItemTagNextToTitletimeStr')[1].textContent='2025/01/01'");
             selectionOverrides.Clear();await StartTask("scan");await WaitIdle();
 
-            contentType.SelectedIndex=1;await ReadEmojis();await WaitIdle();
+            contentType.SelectedIndex=0;await ReadEmojis();await WaitIdle();
             if(!emojiCatalogs.ContainsKey("builtin")||emojiCatalogs["builtin"].Count!=3)throw new Exception("自带表情库读取失败");
             checks.Add("Native built-in emoji library loads without sending");
+            if(!File.Exists(builtinCache.FilePath)||new BuiltinEmojiCache(storage.Folder).Read().Count!=3)throw new Exception("自带表情首次读取未持久化");
+            checks.Add("Built-in emoji catalog persists as a dedicated local JSON file");
+            emojiCatalogs.Remove("builtin");LoadBuiltinCache();
+            if(emojiCatalogs["builtin"].Count!=3||!chooseEmojiButton.Enabled)throw new Exception("重新打开无法直接使用缓存");
+            checks.Add("Cached built-in emoji catalog reloads without scanning and enables insertion");
+            int cacheAdded;var changedEmoji=new Dictionary<string,object>(emojiCatalogs["builtin"][0]);changedEmoji["src"]="https://p3.douyinpic.com/new-thumbnail.png";
+            var newEmoji=new Dictionary<string,object>{{"kind","builtin"},{"token","[缓存测试]"},{"name","[缓存测试]"},{"src","https://p3.douyinpic.com/new-token.png"}};
+            var merged=builtinCache.Merge(new[]{changedEmoji,newEmoji,newEmoji},out cacheAdded);
+            if(cacheAdded!=1||merged.Count!=4||Json.Str(merged[0],"src")!=Json.Str(changedEmoji,"src"))throw new Exception("缓存增量合并或去重错误");
+            if(builtinCache.Merge(new List<Dictionary<string,object>>(),out cacheAdded).Count!=4||cacheAdded!=0)throw new Exception("空扫描删除了历史表情");
+            checks.Add("Incremental cache adds unique tokens, refreshes thumbnails and never removes missing emoji");
+            string cacheText=File.ReadAllText(builtinCache.FilePath);
+            var invalid=new Dictionary<string,object>{{"kind","custom"},{"token","[不保存]"},{"src","https://p3.douyinpic.com/custom.png"},{"cookie","not-real"}};
+            if(builtinCache.Merge(new[]{invalid},out cacheAdded).Count!=4||cacheAdded!=0||File.ReadAllText(builtinCache.FilePath)!=cacheText||cacheText.Contains("cookie"))throw new Exception("缓存保存了账户数据或收藏表情");
+            checks.Add("Cache stores only normalized built-in metadata and excludes account or favorite-sticker data");
+            var brokenCache=new BuiltinEmojiCache(Path.Combine(storage.Folder,"cache-corrupt-test"));Directory.CreateDirectory(Path.GetDirectoryName(brokenCache.FilePath));File.WriteAllText(brokenCache.FilePath,"not-json");bool rejected=false;
+            try{brokenCache.Merge(new[]{newEmoji},out cacheAdded);}catch{rejected=true;}
+            if(!rejected||File.ReadAllText(brokenCache.FilePath)!="not-json")throw new Exception("损坏缓存被覆盖");
+            checks.Add("Corrupt emoji cache is preserved rather than silently overwritten");
+            await ReadEmojis();await WaitIdle();
+            if(emojiCatalogs["builtin"].Count!=4||new BuiltinEmojiCache(storage.Folder).Read().Count!=4)throw new Exception("再次读取丢失旧表情");
+            checks.Add("Official rereading merges into cache without deleting unavailable historical tokens");
+            using(var reopened=new MainForm(true,false,null)){
+                File.Copy(builtinCache.FilePath,reopened.builtinCache.FilePath);reopened.LoadBuiltinCache();
+                if(reopened.emojiCatalogs["builtin"].Count!=4||!reopened.chooseEmojiButton.Enabled||reopened.ready)throw new Exception("重启缓存加载依赖抖音网页");
+                reopened.message.Text="";if(!reopened.InsertBuiltinEmoji(reopened.emojiCatalogs["builtin"][3])||reopened.message.Text!="[缓存测试]")throw new Exception("缓存表情无法离线插入");
+            }
+            checks.Add("Fresh application instance restores cached codes and inserts before Douyin page initialization");
+
             message.Text="前后";message.SelectionStart=1;
             using(EmojiPicker picker=new EmojiPicker(emojiCatalogs["builtin"],currentEnvironment,"自带表情连续插入测试",true,InsertBuiltinEmoji)){
                 if(picker.ShowDialog(this)!=DialogResult.OK)throw new Exception("表情缩略图选择通信失败:"+String.Join(";",picker.Diagnostics));
@@ -614,7 +672,7 @@ internal sealed class MainForm : Form
             checks.Add("Executable embeds only the Douyin engine and required application resources");
             await browser.CoreWebView2.ExecuteScriptAsync("(function(){const R=Date,b=new R().setHours(12,0,0,0),start=R.now(),f=20;window.Date=class extends R{constructor(...a){super(...(a.length?a:[b+(R.now()-start)*f]));}static now(){return b+(R.now()-start)*f;}};const t=setTimeout.bind(window);window.setTimeout=(fn,ms,...a)=>t(fn,Math.max(4,ms/f),...a);})();");
             await browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('[data-e2e=conversation-item]').dispatchEvent(new MouseEvent('mousedown',{bubbles:true}))");
-            contentType.SelectedIndex=2;await ReadEmojis();await WaitIdle();
+            contentType.SelectedIndex=1;await ReadEmojis();await WaitIdle();
             if(!emojiCatalogs.ContainsKey("custom")||emojiCatalogs["custom"].Count!=3)throw new Exception("收藏表情库读取失败");
             selectedEmoji=emojiCatalogs["custom"][1];UpdateContentUI();
             state["records"]=new Dictionary<string,object>();storage.Save(state);
@@ -625,7 +683,7 @@ internal sealed class MainForm : Form
             checks.Add("Native favorite-sticker mode sends only selected image content with no extra text");
             await StartTask("send");await WaitIdle();if(await DemoSentCount()!=2)throw new Exception("表情发送没有按日去重");
             checks.Add("Daily deduplication also covers native favorite-sticker mode");
-            message.Text="你好[捂脸][微笑][捂脸]";contentType.SelectedIndex=1;SaveSettings();
+            message.Text="你好[捂脸][微笑][捂脸]";contentType.SelectedIndex=0;SaveSettings();
             state["records"]=new Dictionary<string,object>();storage.Save(state);
             await browser.CoreWebView2.ExecuteScriptAsync("window.sent=[];window.__SparkDesktop=undefined;");await InjectEngine();await WaitReady();
             await StartTask("send");await WaitIdle();
@@ -645,12 +703,35 @@ internal sealed class MainForm : Form
             manual.Checked=true;await StartTask("scan");await WaitIdle();
             if(Controls.Count!=1||Controls[0]!=rootLayout||rootLayout.Width!=ClientSize.Width)throw new Exception("单平台布局未铺满窗口");
             checks.Add("Single-platform layout fills the window without a platform navigation rail");
+            if(contentType.Items.Count!=2||contentType.Items[0].ToString()!="文字/表情"||contentType.Items[1].ToString()!="收藏表情包")throw new Exception("发送模式没有精简");
+            var current=Json.Map(state,"config");current["contentKind"]="text";ApplyConfig();if(ContentKind!="builtin")throw new Exception("旧文字模式未迁移");
+            current["contentKind"]="custom";ApplyConfig();if(ContentKind!="custom")throw new Exception("旧收藏表情模式未保留");
+            current["contentKind"]="builtin";ApplyConfig();SaveSettings();
+            checks.Add("Two message modes preserve legacy text, built-in and favorite-sticker configurations");
+            if(!logBox.Text.Contains("发送任务完成")||!logBox.Text.Contains("本次未发送"))throw new Exception("完成汇总未写入右下角日志");
+            checks.Add("Right-hand activity log includes batch completion and zero-send summaries");
+            using(var smooth=new RecipientList {Size=new Size(360,160)}){
+                IntPtr handle=smooth.Handle;smooth.BeginUpdate();
+                for(int i=0;i<1000;i++)smooth.Items.Add(new Recipient{Name="测试好友"+i,State="active",Id=i.ToString()});
+                smooth.EndUpdate();smooth.SetItemChecked(8,true);
+                smooth.ScrollBy(smooth.ItemHeight*8+17);double destination=smooth.ScrollTarget;
+                if(smooth.IsAnimating&&smooth.ScrollOffset>=destination)throw new Exception("滚动不是渐进动画");
+                await Task.Delay(40);if(smooth.ScrollOffset<=0||smooth.ScrollOffset>destination)throw new Exception("向下滚动边界错误");
+                for(int i=0;i<40&&smooth.IsAnimating;i++)await Task.Delay(20);
+                if(Math.Abs(smooth.ScrollOffset-destination)>.6||!smooth.GetItemChecked(8))throw new Exception("滚动终点或选择状态错误");
+                int hit=smooth.IndexFromPoint(new Point(10,5));if(hit!=(int)Math.Floor((smooth.ScrollOffset+5)/smooth.ItemHeight))throw new Exception("像素偏移后的点击定位错误");
+                smooth.ScrollBy(-smooth.ItemHeight*3);await Task.Delay(35);if(smooth.ScrollOffset>=destination)throw new Exception("反向滚动未响应");
+                smooth.TopIndex=0;if(smooth.ScrollOffset!=0||smooth.ScrollTarget!=0||smooth.IsAnimating)throw new Exception("回顶残留动画");
+                smooth.ScrollBy(500);smooth.ClearItems();await Task.Delay(35);if(smooth.Items.Count!=0||smooth.ScrollOffset!=0||smooth.IsAnimating)throw new Exception("清空后仍滚动");
+            }
+            checks.Add("Thousand-row pixel scrolling eases both directions, preserves checks, hit testing and instant reset");
+
             if(reportPath!=null) { var debug=new List<object>(); CollectLayout(rootLayout,debug);File.WriteAllText(Path.Combine(Path.GetDirectoryName(reportPath),"layout-debug.json"),Json.Encode(debug),new UTF8Encoding(false)); }
             string screenshot = reportPath != null ? Path.Combine(Path.GetDirectoryName(reportPath), "软件界面演示.png") : null;
             if (screenshot != null) {
                 await CaptureScreenshot(screenshot);
                 Size original=Size;Size=MinimumSize;PerformLayout();await Task.Delay(100);
-                if(recipients.ClientSize.Height<recipients.ItemHeight||sendButton.Height<30||message.Height<30)throw new Exception("最小窗口关键控件被截断");
+                if(recipients.ClientSize.Height<recipients.ItemHeight||sendButton.Height<30||message.Height<30||logBox.Height<95)throw new Exception("最小窗口关键控件被截断：list="+recipients.ClientSize.Height+" row="+recipients.ItemHeight+" send="+sendButton.Height+" message="+message.Height+" log="+logBox.Height+" client="+ClientSize);
                 await CaptureScreenshot(Path.Combine(Path.GetDirectoryName(screenshot),"软件界面-最小窗口.png"));Size=original;
             }
             checks.Add("High-DPI rendering and minimum window layout keep input and friend rows visible");
@@ -686,7 +767,7 @@ internal sealed class MainForm : Form
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { if (browser != null) browser.Dispose(); foreach (MemoryStream stream in testResponses) stream.Dispose(); }
+        if (disposing) { tips.Dispose();if (browser != null) browser.Dispose(); foreach (MemoryStream stream in testResponses) stream.Dispose(); }
         base.Dispose(disposing);
     }
     private sealed class Recipient : IRecipientVisual

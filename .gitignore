@@ -27,3 +27,6 @@ Sessions/
 .env*
 *.pfx
 *.key
+
+# User-built official emoji cache stays local
+builtin-emoji-cache.json*

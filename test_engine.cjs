@@ -258,4 +258,21 @@ test('disabled daily deduplication permits repeated favorite stickers',async()=>
  const{page,ctx}=await make();const c=await catalog(page,'custom');const cfg={...defaults,dailyDedup:false,contentKind:'custom',emoji:c.items[0]};await run(page,'send',cfg);const r=await run(page,'send',cfg);assert.equal(r.sent.length,4);assert.ok(r.sent.every(x=>x.kind==='custom'));assert.equal(Object.keys(r.disk.records).length,2);await ctx.close();
 });
 
+test('completed manual batch reports final summary in native log',async()=>{
+ const{page,ctx}=await make();const cfg={...defaults,manualSelection:true};const scan=await run(page,'scan',cfg);const id=scan.events.find(e=>e.type==='preview').data[0].identity;const r=await run(page,'send',cfg,[],[id]);assert.equal(r.sent.length,1);const summaries=r.events.filter(e=>e.type==='log'&&e.data.text.includes('发送任务完成'));assert.equal(summaries.length,1);assert.ok(summaries[0].data.text.includes('1 位'));await ctx.close();
+});
+test('daily skips are logged without claiming every checked friend was sent',async()=>{
+ const{page,ctx}=await make();await run(page);const r=await run(page);assert.equal(r.sent.length,2);assert.ok(r.events.some(e=>e.type==='log'&&e.data.text.includes('本次未发送')&&e.data.text.includes('2 位')));assert.ok(!r.events.some(e=>e.type==='log'&&e.data.text.includes('发送任务完成')));await ctx.close();
+});
+test('preserved drafts produce partial summary rather than all-sent message',async()=>{
+ const{page,ctx}=await make();const cfg={...defaults,manualSelection:true};const scan=await run(page,'scan',cfg);const id=scan.events.find(e=>e.type==='preview').data.find(x=>x.name==='普通好友').identity;await page.evaluate(()=>people.find(x=>x.name==='普通好友').draft='原有草稿');const r=await run(page,'send',cfg,[],[id]);assert.equal(r.sent.length,0);assert.ok(r.events.some(e=>e.type==='log'&&e.data.text.includes('其他跳过 1 位')));assert.ok(!r.events.some(e=>e.type==='log'&&e.data.text.includes('发送任务完成')));await ctx.close();
+});
+test('stopping mid-batch never reports full completion',async()=>{
+ const{page,ctx}=await make();await page.evaluate(config=>__SparkDesktop.start('send',config,[]),{...defaults,intervalSeconds:300});await page.waitForFunction(()=>sent.length===1);await page.evaluate(()=>__SparkDesktop.stop());await page.waitForFunction(()=>events.some(e=>e.type==='busy'&&!e.data.value));assert.ok(!await page.evaluate(()=>events.some(e=>e.type==='log'&&e.data.text.includes('发送任务完成'))));await ctx.close();
+});
+
+test('disappeared checked friend is reported instead of claiming all were sent',async()=>{
+ const{page,ctx}=await make();const cfg={...defaults,manualSelection:true};const scan=await run(page,'scan',cfg);const id=scan.events.find(e=>e.type==='preview').data[0].identity;const r=await run(page,'send',cfg,[],[id,'missing-selected-id']);assert.equal(r.sent.length,1);assert.ok(r.events.some(e=>e.type==='log'&&e.data.text.includes('当前列表未找到 1 位')));assert.ok(!r.events.some(e=>e.type==='log'&&e.data.text.includes('发送任务完成')));await ctx.close();
+});
+
 (async()=>{browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});let passed=0;try{for(const[name,fn]of tests){await fn();passed++;console.log('PASS '+name);}}finally{await browser.close();}fs.writeFileSync(path.join(__dirname,'engine-test-results.json'),JSON.stringify({version:'1.0.0',passed,total:tests.length,scope:'Isolated emoji reading/insertion/sticker sending, contact filters, desktop bridge and recipient selection tests; no real account messaging.'},null,2));console.log('All '+passed+' desktop bridge tests passed.');})().catch(e=>{console.error(e);process.exitCode=1;});

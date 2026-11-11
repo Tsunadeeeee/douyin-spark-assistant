@@ -39,6 +39,7 @@ for name in ['engine.js','spark.ico','demo.html']:
 args.append(str(root/'SparkDesk.cs'))
 args.append(str(root/'ModernControls.cs'))
 args.append(str(root/'EmojiPicker.cs'))
+args.append(str(root/'BuiltinEmojiCache.cs'))
 subprocess.run(args,check=True)
 (out/'火花助手.exe.config').write_text('<?xml version="1.0" encoding="utf-8"?><configuration><startup useLegacyV2RuntimeActivationPolicy="true"><supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.8"/></startup><runtime><loadFromRemoteSources enabled="false"/></runtime></configuration>',encoding='utf-8')
 for license_path in (root/'deps/webview2').glob('*LICENSE*'):
